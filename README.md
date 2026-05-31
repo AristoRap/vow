@@ -1,5 +1,7 @@
 # vow
 
+[![CI](https://github.com/AristoRap/vow/actions/workflows/ci.yml/badge.svg)](https://github.com/AristoRap/vow/actions/workflows/ci.yml)
+
 Vow generates a typed client — TypeScript, or JavaScript plus a `.d.ts` — from
 your annotated Crystal methods, so the frontend can call them with the arguments
 and return types checked.
@@ -51,7 +53,8 @@ real calls at runtime, and generating the typed client.
 
 ## Install
 
-Add it to your `shard.yml`:
+**As a library** — to call Vow from Crystal (dispatch, manifest, the codegen
+API) — add it to your `shard.yml` and run `shards install`:
 
 ```yaml
 dependencies:
@@ -59,7 +62,19 @@ dependencies:
     github: AristoRap/vow
 ```
 
-Run `shards install`. Build the CLI with `shards build vow` (creates `bin/vow`).
+**As the `vow` CLI** — to run `vow gen` from a shell — build the binary and put
+it on your `PATH`:
+
+```bash
+git clone https://github.com/AristoRap/vow && cd vow
+shards install
+make build      # runs the specs, then `shards build` → ./bin/vow
+make copy       # installs it to /usr/local/bin/vow
+```
+
+`make deploy` does a `--release` build then `copy` in one step. Throughout this
+README, `vow` means that binary on your `PATH`; to skip installing it, run it in
+place as `./bin/vow …`.
 
 ## Usage
 
