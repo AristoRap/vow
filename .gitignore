@@ -1,0 +1,15 @@
+/docs/
+/lib/
+/bin/
+/.shards/
+*.dwarf
+
+# Libraries don't need dependency lock
+# Dependencies will be locked in applications that use them
+/shard.lock
+
+# Standalone example apps manage their own (ignored) deps and build output
+/examples/**/lib/
+/examples/**/.shards/
+/examples/**/shard.lock
+/examples/kemal/server

@@ -1,0 +1,88 @@
+require "json"
+
+module Vow
+  # One exported argument: its name, its declared Crystal type (captured
+  # verbatim from the signature — `"Int32"`, `"Array(String)"`, …), and whether
+  # it's optional (has a default value, so the caller may omit it). The type
+  # string is the raw Crystal type — mapping it to a target language
+  # (TypeScript, …) happens in the codegen layer, not here, so the manifest
+  # stays a pure, target-agnostic structural IR that can't misrepresent the
+  # signature. `optional` defaults to `false` so manifests written before this
+  # field existed still deserialize.
+  struct ArgDescriptor
+    include JSON::Serializable
+    getter name : String
+    getter type : String
+    getter optional : Bool = false
+
+    def initialize(@name : String, @type : String, @optional : Bool = false)
+    end
+  end
+
+  # The static description of one `@[Vow::Export]` method: the dispatch id, its
+  # args, its return type, and the HTTP verb it prefers. Produced at compile time
+  # by `Vow::Exportable` and readable WITHOUT instantiating the service
+  # (`MyService.vow_descriptors`), so a code generator never has to construct or
+  # run user code.
+  #
+  # `verb` is a transport-neutral hint: `"get"` marks a side-effect-free read (an
+  # HTTP transport routes it as GET so a browser/CDN can cache it), `"post"` (the
+  # default) is everything else. A non-HTTP transport (a CLI, a test harness)
+  # simply ignores it — Vow itself never sets a header or builds a URL. It
+  # defaults to `"post"` so manifests written before this field existed still
+  # deserialize.
+  struct ProcedureDescriptor
+    include JSON::Serializable
+    getter name : String
+    getter args : Array(ArgDescriptor)
+    getter return_type : String
+    getter verb : String = "post"
+
+    def initialize(@name : String, @args : Array(ArgDescriptor), @return_type : String, @verb : String = "post")
+    end
+  end
+
+  # One field of a captured surface type: its name and raw Crystal type string.
+  struct FieldDescriptor
+    include JSON::Serializable
+    getter name : String
+    getter type : String
+
+    def initialize(@name : String, @type : String)
+    end
+  end
+
+  # A custom type that crosses the boundary — captured automatically when an
+  # `@[Vow::Export]` signature references a `JSON::Serializable` struct/class
+  # (transitively, through generics and unions). `crystal_name` is the full
+  # Crystal path (used to match references and dedup); `name` is the simple
+  # name a codegen target emits (e.g. a TS `interface`). A non-serializable
+  # custom type is rejected at compile time, so anything captured here is
+  # guaranteed to actually serialize — the manifest never describes a type
+  # that can't cross.
+  struct TypeDescriptor
+    include JSON::Serializable
+    getter name : String
+    getter crystal_name : String
+    getter fields : Array(FieldDescriptor)
+
+    def initialize(@name : String, @crystal_name : String, @fields : Array(FieldDescriptor))
+    end
+  end
+
+  # The full set of procedures (and the custom types they reference) a build
+  # exposes — the contract a codegen target or transport consumes. Serializes
+  # to `{"procedures": [...], "types": [...]}` so it can be dumped to disk or
+  # piped to an out-of-process generator.
+  struct Manifest
+    include JSON::Serializable
+    getter procedures : Array(ProcedureDescriptor)
+    getter types : Array(TypeDescriptor)
+
+    def initialize(
+      @procedures : Array(ProcedureDescriptor) = [] of ProcedureDescriptor,
+      @types : Array(TypeDescriptor) = [] of TypeDescriptor,
+    )
+    end
+  end
+end
