@@ -396,4 +396,66 @@ module Vow
       end
     end
   end
+
+  # Consumer-driven dispatch registration, for a downstream framework that has
+  # its OWN export annotation (Vow knows nothing about it). The framework
+  # `include`s this and calls `vow_register_marked(registry, MyAnnotation)` from
+  # one of its own instance methods. Because the macro expands in the
+  # *consumer's* class context (`@type` is that class), Vow registers every
+  # method carrying `marker` with the exact decode → invoke → JSON-encode
+  # callback it generates for `@[Vow::Export]` — so the consumer reuses Vow's
+  # dispatch instead of reimplementing it, while keeping its own annotation,
+  # ids, and any sidecar metadata (async scheduling, routing, …) on the side.
+  #
+  # The wire id is `<ClassPath with :: as .>.<method camelCased>` and each wire
+  # key is the camelCased parameter name — identical to `@[Vow::Export]`. A
+  # leading `Vow::Context` (or subclass) parameter opts the method into the
+  # per-call context exactly as it does under `@[Vow::Export]`. Arg defaults are
+  # honored (an omitted optional key falls back to the signature default).
+  #
+  # This is intentionally narrower than `@[Vow::Export]`: it does not read the
+  # marker's options (the marker is the consumer's own annotation, with its own
+  # fields), so there is no `name:`/`verb:`/`skip:` handling — the consumer
+  # layers any such concern on top.
+  module Exportable::Marked
+    macro vow_register_marked(registry, marker)
+      {% for m in @type.methods %}
+        {% if m.annotation(marker.resolve) %}
+          {% ns = @type.name.stringify.split("::").join(".") %}
+          {% proc_name = ns + "." + m.name.stringify.camelcase(lower: true) %}
+          # A leading `Vow::Context` parameter is the context opt-in: thread the
+          # dispatched context into it and keep it out of the decoded args.
+          {% ctx = false %}
+          {% if m.args.size > 0 && (r = m.args[0].restriction).is_a?(Path) %}
+            {% rr = r.resolve %}
+            {% ctx = rr == ::Vow::Context || rr.ancestors.includes?(::Vow::Context) %}
+          {% end %}
+          {% payload = (ctx ? m.args[1..-1] : m.args).reject { |a| a.name.stringify.empty? } %}
+          {{ registry }}.register({{ proc_name }}) do |__args, __ctx|
+            {% for arg, i in payload %}
+              {% key = arg.name.stringify.camelcase(lower: true) %}
+              {% if arg.default_value.is_a?(Nop) %}
+                unless __args.has_key?({{ key }})
+                  raise ::Vow::Error.bad_input("#{{{ proc_name }}} is missing required argument {{ key.id }}")
+                end
+                __arg{{ i }} = ::Vow::Registry.decode({{ arg.restriction }}, __args[{{ key }}])
+              {% else %}
+                __arg{{ i }} =
+                  if __args.has_key?({{ key }})
+                    ::Vow::Registry.decode({{ arg.restriction }}, __args[{{ key }}])
+                  else
+                    {{ arg.default_value }}
+                  end
+              {% end %}
+            {% end %}
+            {% call_args = [] of _ %}
+            {% if ctx %}{% call_args << "__ctx.as(#{m.args[0].restriction})" %}{% end %}
+            {% for arg, i in payload %}{% call_args << "#{arg.name}: __arg#{i}" %}{% end %}
+            __result = {{ m.name.id }}({{ call_args.join(", ").id }})
+            JSON.parse(__result.to_json)
+          end
+        {% end %}
+      {% end %}
+    end
+  end
 end
