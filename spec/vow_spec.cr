@@ -295,5 +295,30 @@ describe Vow do
       manifest.procedures.map(&.name).should contain("TestAPI.ping")
       Vow::Manifest.from_json(manifest.to_json).procedures.size.should eq(manifest.procedures.size)
     end
+
+    # The manifest is consumed in JS/TS, so its multi-word JSON keys are
+    # camelCase on the wire (`returnType`, `crystalName`) even though the Crystal
+    # getters stay snake_case. Pinned here so the wire contract can't drift back.
+    it "serializes procedure return type as the camelCase key `returnType`" do
+      serialized = Vow::ProcedureDescriptor.new(name: "X.y", args: [] of Vow::ArgDescriptor, return_type: "String").to_json
+      serialized.should contain(%("returnType":"String"))
+      serialized.should_not contain("return_type")
+    end
+
+    it "deserializes the camelCase `returnType` key back into the getter" do
+      d = Vow::ProcedureDescriptor.from_json(%({"name":"X.y","args":[],"returnType":"String"}))
+      d.return_type.should eq("String")
+    end
+
+    it "serializes type descriptor's crystal name as the camelCase key `crystalName`" do
+      serialized = Vow::TypeDescriptor.new(name: "Point", crystal_name: "Geo::Point", fields: [] of Vow::FieldDescriptor).to_json
+      serialized.should contain(%("crystalName":"Geo::Point"))
+      serialized.should_not contain("crystal_name")
+    end
+
+    it "deserializes the camelCase `crystalName` key back into the getter" do
+      t = Vow::TypeDescriptor.from_json(%({"name":"Point","crystalName":"Geo::Point","fields":[]}))
+      t.crystal_name.should eq("Geo::Point")
+    end
   end
 end

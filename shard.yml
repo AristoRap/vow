@@ -1,5 +1,5 @@
 name: vow
-version: 0.2.0
+version: 0.3.0
 description: Generate a typed client (TypeScript, or JavaScript plus a .d.ts) from your annotated Crystal methods.
 
 authors:

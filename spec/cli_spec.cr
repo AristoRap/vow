@@ -27,7 +27,7 @@ end
 describe "vow CLI" do
   describe "gen --manifest" do
     it "drives the CLI to write a TS client from a manifest file" do
-      manifest = %({"procedures":[{"name":"API.ping","args":[],"return_type":"String"}],"types":[]})
+      manifest = %({"procedures":[{"name":"API.ping","args":[],"returnType":"String"}],"types":[]})
       mpath = File.tempname("vow", ".json")
       opath = File.tempname("vow", ".ts")
       File.write(mpath, manifest)
@@ -52,7 +52,7 @@ describe "vow CLI" do
 
   describe "gen --target js" do
     it "writes a .js runtime and a .d.ts beside it from one --out stem" do
-      manifest = %({"procedures":[{"name":"API.ping","args":[],"return_type":"String"}],"types":[]})
+      manifest = %({"procedures":[{"name":"API.ping","args":[],"returnType":"String"}],"types":[]})
       mpath = File.tempname("vow", ".json")
       stem = File.tempname("vowclient", "")
       File.write(mpath, manifest)
@@ -80,7 +80,7 @@ describe "vow CLI" do
 
   describe "gen --check" do
     it "passes (writes nothing) when the client on disk is current" do
-      manifest = %({"procedures":[{"name":"API.ping","args":[],"return_type":"String"}],"types":[]})
+      manifest = %({"procedures":[{"name":"API.ping","args":[],"returnType":"String"}],"types":[]})
       mpath = File.tempname("vow", ".json")
       opath = File.tempname("vow", ".ts")
       File.write(mpath, manifest)
@@ -109,7 +109,7 @@ describe "vow CLI" do
     # (the in-process `abort` would kill the spec run) — same pattern as the
     # "fails loud" entry test below.
     it "fails non-zero, naming the stale file, when the client is out of date" do
-      manifest = %({"procedures":[{"name":"API.ping","args":[],"return_type":"String"}],"types":[]})
+      manifest = %({"procedures":[{"name":"API.ping","args":[],"returnType":"String"}],"types":[]})
       mpath = File.tempname("vow", ".json")
       opath = File.tempname("vow", ".ts")
       File.write(mpath, manifest)

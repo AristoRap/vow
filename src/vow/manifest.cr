@@ -35,6 +35,9 @@ module Vow
     include JSON::Serializable
     getter name : String
     getter args : Array(ArgDescriptor)
+    # The Crystal getter stays snake_case; the wire key is camelCase because the
+    # manifest is consumed in JS/TS where `returnType` is the convention.
+    @[JSON::Field(key: "returnType")]
     getter return_type : String
     getter verb : String = "post"
 
@@ -68,6 +71,8 @@ module Vow
   struct TypeDescriptor
     include JSON::Serializable
     getter name : String
+    # Snake_case getter, camelCase wire key — see `ProcedureDescriptor#return_type`.
+    @[JSON::Field(key: "crystalName")]
     getter crystal_name : String
     getter fields : Array(FieldDescriptor)
     getter kind : String = "struct"

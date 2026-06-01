@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.0]
+
+### Changed
+
+- **Manifest JSON keys are camelCase** _(breaking)_. The manifest is consumed in JS/TS, so its multi-word keys now match that convention: `return_type` → `returnType` (on `ProcedureDescriptor`) and `crystal_name` → `crystalName` (on `TypeDescriptor`). The Crystal getters keep their snake_case names; only the wire/serialized form changed (via `@[JSON::Field(key: ...)]`). A pre-generated manifest file written by 0.2.x must be regenerated, and any consumer reading the raw manifest JSON by key must use the new names.
+
 ## [0.2.0] - 2026-06-01
 
 ### Added
