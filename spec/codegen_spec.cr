@@ -85,6 +85,30 @@ class Beacon
   end
 end
 
+# A serializable struct reachable ONLY through a NamedTuple member. Capturing it
+# proves `collect` walks a NamedTuple return by key. A NamedTuple's `type_vars`
+# is `[the NamedTuple itself]`, so a naive type-args walk self-recurses forever;
+# capture must descend by key instead, terminate, and pull out nested
+# serializable members — while leaving the NamedTuple itself (a built-in inline
+# shape) uncaptured.
+struct Pin
+  include JSON::Serializable
+  getter at : Point
+  getter note : String
+
+  def initialize(@at, @note)
+  end
+end
+
+class Atlas
+  include Vow::Exportable
+
+  @[Vow::Export]
+  def locate(id : Int32) : NamedTuple(label: String, pin: Pin)
+    {label: "x", pin: Pin.new(Point.new(id, id), "n")}
+  end
+end
+
 describe Vow::Codegen do
   describe "crystal_to_ts" do
     map = ->(t : String) { Vow::Codegen.crystal_to_ts(t) }
@@ -144,6 +168,13 @@ describe Vow::Codegen do
     it "omits an @[JSON::Field(ignore: true)] field — it never crosses" do
       account = Geo.vow_types.find { |t| t.crystal_name == "Account" }.not_nil!
       account.fields.map(&.name).should_not contain("cached")
+    end
+
+    # Regression: a NamedTuple return must be walked by key (terminating) rather
+    # than via `type_vars` (which is the NamedTuple itself → infinite recursion).
+    # `Pin` and its nested `Point` are captured; the NamedTuple is not.
+    it "walks a NamedTuple return by key — captures nested types, not the NamedTuple" do
+      Atlas.vow_types.map(&.crystal_name).sort.should eq(["Pin", "Point"])
     end
   end
 

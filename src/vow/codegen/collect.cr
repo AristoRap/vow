@@ -18,7 +18,8 @@ module Vow
 
     # Appends a `Vow::TypeDescriptor` to `acc` for every `JSON::Serializable`
     # type reachable from `t`, transitively, walking through generic type args
-    # (`Array(T)`, `Hash(K, V)`, …) and unions (`T?`). `seen` is a `|`-joined
+    # (`Array(T)`, `Hash(K, V)`, …), `NamedTuple` members (by key), and unions
+    # (`T?`). `seen` is a `|`-joined
     # path of visited type names that prevents infinite recursion on
     # self-referential types; DAG diamonds may emit a type more than once, so
     # callers dedup by `crystal_name`.
@@ -69,6 +70,23 @@ module Vow
                 ::Vow::Codegen.collect({{ acc }}, {{ iv.type }}, {{ seen + key + "|" }})
               {% end %}
             {% end %}
+          {% end %}
+        {% end %}
+      {% elsif r.name(generic_args: false).stringify.starts_with?("NamedTuple") %}
+        # A NamedTuple is a built-in inline shape (`crystal_to_ts` renders it as
+        # `{ ... }`), so it's never captured itself — but it can carry
+        # `JSON::Serializable` members that must be. Walk it BY KEY: a
+        # NamedTuple's `type_vars` is `[the NamedTuple itself]`, so the
+        # `type_vars` branch below would self-recurse forever. `seen` is passed
+        # unchanged — each member is a distinct, structurally smaller type, so
+        # this terminates.
+        {% for k in r.keys %}
+          {% if r[k].union? %}
+            {% for u in r[k].union_types %}
+              ::Vow::Codegen.collect({{ acc }}, {{ u }}, {{ seen }})
+            {% end %}
+          {% else %}
+            ::Vow::Codegen.collect({{ acc }}, {{ r[k] }}, {{ seen }})
           {% end %}
         {% end %}
       {% elsif !r.type_vars.empty? %}
