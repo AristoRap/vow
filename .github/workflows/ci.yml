@@ -24,3 +24,26 @@ jobs:
       # is needed before running the suite.
       - name: Run specs
         run: make test
+
+  # The spec suite never links `src/vow_cli.cr` (the CLI specs run it via
+  # `crystal run`), so a break in the CLI target wouldn't surface in `test`.
+  # This job compiles the binary and smoke-tests it to cover that gap. Runs in
+  # parallel with `test`.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Crystal
+        uses: oprypin/install-crystal@v1
+        with:
+          crystal: "1.20.2"
+
+      - name: Install dependencies
+        run: shards install
+
+      - name: Build CLI
+        run: shards build
+
+      - name: Smoke-test the binary
+        run: ./bin/vow version

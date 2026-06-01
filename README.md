@@ -1,6 +1,7 @@
 # vow
 
 [![CI](https://github.com/AristoRap/vow/actions/workflows/ci.yml/badge.svg)](https://github.com/AristoRap/vow/actions/workflows/ci.yml)
+[![Latest tag](https://img.shields.io/github/v/tag/AristoRap/vow?label=release&sort=semver)](https://github.com/AristoRap/vow/tags)
 
 Vow generates a typed client — TypeScript, or JavaScript plus a `.d.ts` — from
 your annotated Crystal methods, so the frontend can call them with the arguments
