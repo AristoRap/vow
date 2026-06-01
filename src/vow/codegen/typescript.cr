@@ -157,7 +157,12 @@ module Vow
         types.select { |t| seen.add?(t.crystal_name) }
       end
 
+      # A struct renders as an `interface` of its fields; an enum renders as a
+      # `type` alias to the string-literal union of its member names (verbatim).
       private def self.render_interface(type : TypeDescriptor, known : Hash(String, String)) : String
+        if type.kind == "enum"
+          return "export type #{type.name} = #{type.members.map(&.inspect).join(" | ")};"
+        end
         body = type.fields.map { |f| "  #{ts_member(f.name)}: #{Codegen.crystal_to_ts(f.type, known)};" }.join("\n")
         "export interface #{type.name} {\n#{body}\n}"
       end

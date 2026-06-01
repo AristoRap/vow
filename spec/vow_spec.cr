@@ -160,6 +160,18 @@ describe Vow do
       ex.code.should eq("not_found")
     end
 
+    it "suggests the nearest registered name on an unknown procedure (did-you-mean)" do
+      ex = expect_raises(Vow::Error) { registry.dispatch("TestAPI.gret", %({})) }
+      ex.code.should eq("not_found")
+      ex.hint.should_not be_nil
+      ex.hint.not_nil!.should contain("TestAPI.greet")
+    end
+
+    it "omits the suggestion when nothing is close enough" do
+      ex = expect_raises(Vow::Error) { registry.dispatch("xQz", %({})) }
+      ex.hint.should be_nil
+    end
+
     it "raises bad_input naming a missing required arg" do
       ex = expect_raises(Vow::Error) { registry.dispatch("TestAPI.greet", %({})) }
       ex.code.should eq("bad_input")

@@ -109,6 +109,73 @@ class Atlas
   end
 end
 
+# A plain enum referenced by an export. vow captures it as a string-literal
+# union of the values each member *serializes to* (`Enum#to_json`) — not the
+# Crystal member names. Crystal's default lowercases, so `Red` → `"red"`. vow
+# applies no transform of its own; it reflects whatever the type serializes to.
+# Reached both directly (a return) and through a NamedTuple member.
+enum Color
+  Red
+  Green
+  Blue
+end
+
+# An enum with a custom `to_json`: vow reflects the custom wire form into the
+# union (so the generated type always matches what actually crosses).
+enum Hue
+  Warm
+  Cool
+
+  def to_json(builder : JSON::Builder)
+    builder.string(to_s.upcase)
+  end
+end
+
+# An enum reachable ONLY through a struct field and an Array element — proves
+# capture descends into both and reaches the enum leaf the same way it reaches
+# a nested struct.
+enum Weight
+  Light
+  Bold
+end
+
+struct Style
+  include JSON::Serializable
+  getter weight : Weight
+
+  def initialize(@weight)
+  end
+end
+
+class Palette
+  include Vow::Exportable
+
+  @[Vow::Export]
+  def pick(name : String) : Color
+    Color::Red
+  end
+
+  @[Vow::Export]
+  def swatch(c : Color) : NamedTuple(color: Color, hex: String)
+    {color: c, hex: "#ff0000"}
+  end
+
+  @[Vow::Export]
+  def tone(h : Hue) : Hue
+    h
+  end
+
+  @[Vow::Export]
+  def styled : Style
+    Style.new(Weight::Bold)
+  end
+
+  @[Vow::Export]
+  def weights : Array(Weight)
+    [Weight::Light, Weight::Bold]
+  end
+end
+
 describe Vow::Codegen do
   describe "crystal_to_ts" do
     map = ->(t : String) { Vow::Codegen.crystal_to_ts(t) }
@@ -315,6 +382,55 @@ describe Vow::Codegen do
       dts.should contain("findAccount(args: { accountId: number }): Promise<Account>;")
       # the typed method shapes appear under both factory declarations
       dts.scan("Geo: {").size.should eq(2)
+    end
+  end
+
+  # An enum crosses the boundary as a string-literal union of its member names,
+  # captured generically (no JSON::Serializable needed) and emitted as a TS
+  # `type` alias rather than an `interface`. vow records the values each member
+  # SERIALIZES to (`Enum#to_json`) — Crystal's default lowercases, and a custom
+  # `to_json` is reflected — so the generated union always matches the wire.
+  describe "enum capture and emit" do
+    it "captures an enum as a string-literal-union surface type from its serialized values" do
+      color = Palette.vow_types.find { |t| t.crystal_name == "Color" }.not_nil!
+      color.kind.should eq("enum")
+      color.members.should eq(["red", "green", "blue"])
+      color.fields.should be_empty
+    end
+
+    it "captures an enum reached through a return and through a NamedTuple member" do
+      Palette.vow_types.map(&.crystal_name).should contain("Color")
+    end
+
+    it "reflects a custom Enum#to_json into the captured union" do
+      hue = Palette.vow_types.find { |t| t.crystal_name == "Hue" }.not_nil!
+      hue.members.should eq(["WARM", "COOL"])
+    end
+
+    it "captures an enum reached only through a struct field and an Array element" do
+      weight = Palette.vow_types.find { |t| t.crystal_name == "Weight" }.not_nil!
+      weight.kind.should eq("enum")
+      weight.members.should eq(["light", "bold"])
+    end
+
+    it "round-trips an enum descriptor through JSON" do
+      restored = Vow::Manifest.from_json(Vow::Registry.new(Palette.new).manifest.to_json)
+      color = restored.types.find { |t| t.crystal_name == "Color" }.not_nil!
+      color.kind.should eq("enum")
+      color.members.should eq(["red", "green", "blue"])
+    end
+
+    it "emits an enum as a TS string-literal union type alias from its serialized values" do
+      ts = Vow::Codegen::TypeScript.emit(Vow::Registry.new(Palette.new).manifest)
+      ts.should contain(%(export type Color = "red" | "green" | "blue";))
+      ts.should contain(%(export type Hue = "WARM" | "COOL";))
+      ts.should contain("pick(args: { name: string }): Promise<Color>")
+    end
+
+    it "declares the same enum alias (not an interface) in the .d.ts" do
+      dts = Vow::Codegen::TypeScript.emit_dts(Vow::Registry.new(Palette.new).manifest)
+      dts.should contain(%(export type Color = "red" | "green" | "blue";))
+      dts.should_not contain("export interface Color")
     end
   end
 end

@@ -1,4 +1,5 @@
 require "json"
+require "levenshtein"
 require "./error"
 require "./procedure"
 require "./manifest"
@@ -78,8 +79,19 @@ module Vow
     # — used by context-free transports and tests — working unchanged.
     def dispatch(name : String, raw_json : String, context : Context? = nil) : String
       proc = @procedures[name]?
-      raise Error.not_found("no procedure named #{name.inspect}") unless proc
+      raise Error.not_found("no procedure named #{name.inspect}", nearest_hint(name)) unless proc
       proc.callback.call(parse_args(raw_json), context).to_json
+    end
+
+    # "did you mean?" suggestion for an unknown dispatch: the closest registered
+    # name within an edit-distance tolerance that scales with the query length,
+    # or `nil` when nothing is close enough (so a wildly different name gets no
+    # misleading hint). Lets a transport surface a typo'd procedure name.
+    private def nearest_hint(name : String) : String?
+      return nil if @procedures.empty?
+      tolerance = Math.max(2, name.size // 3)
+      nearest = Levenshtein.find(name, @procedures.keys, tolerance)
+      nearest ? "did you mean #{nearest.inspect}?" : nil
     end
 
     # Trust boundary: decode one positional arg into its declared type, turning

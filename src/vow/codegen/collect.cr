@@ -72,6 +72,28 @@ module Vow
             {% end %}
           {% end %}
         {% end %}
+      {% elsif r < Enum %}
+        # An enum crosses as a string-literal union of the values its members
+        # SERIALIZE to (`Enum#to_json`) — not their Crystal names. The members
+        # array is built at runtime from each member's actual `to_json` output
+        # (parsed back to its bare string), so the union always matches the wire:
+        # Crystal's default lowercases (`Red` → `"red"`), and a custom `to_json`
+        # is reflected. vow applies no transform of its own. Member values are
+        # leaves, so there's nothing to recurse.
+        {% key = r.name.stringify %}
+        {% unless seen.split("|").includes?(key) %}
+          %members = [] of String
+          {% for c in r.constants %}
+            %members << ::JSON.parse({{ r }}::{{ c }}.to_json).as_s
+          {% end %}
+          {{ acc }} << ::Vow::TypeDescriptor.new(
+            name: {{ key.split("::").last }},
+            crystal_name: {{ key }},
+            fields: [] of ::Vow::FieldDescriptor,
+            kind: "enum",
+            members: %members,
+          )
+        {% end %}
       {% elsif r.name(generic_args: false).stringify.starts_with?("NamedTuple") %}
         # A NamedTuple is a built-in inline shape (`crystal_to_ts` renders it as
         # `{ ... }`), so it's never captured itself — but it can carry

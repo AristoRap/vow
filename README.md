@@ -164,6 +164,37 @@ across the board. Methods that aren't a plain identifier — operators (`+`,
 skipped automatically; add an explicit `@[Vow::Export(name: "...")]` to force one
 onto the wire under a clean name. Either flavor mounts the same way (below).
 
+#### Driving dispatch from your own annotation
+
+If you're building a framework on top of Vow and already have your _own_ export
+annotation, `include Vow::Exportable::Marked` and hand your marker to
+`vow_register_marked` from one of your instance methods. Vow registers every
+method carrying that annotation with the same decode → invoke → JSON-encode
+callback it generates for `@[Vow::Export]` — reusing Vow's dispatch without
+learning about your annotation:
+
+```crystal
+annotation Rpc; end
+
+class ChatService
+  include Vow::Exportable::Marked
+
+  @[Rpc]
+  def greet(name : String) : String
+    "Hi, #{name}"
+  end
+
+  def install(registry : Vow::Registry) : Nil
+    vow_register_marked(registry, Rpc)   # registers every @[Rpc] method
+  end
+end
+```
+
+Wire ids, camelCased arg keys, arg defaults, and a leading `Vow::Context`
+parameter all behave exactly as under `@[Vow::Export]`. It's intentionally
+narrower: it doesn't read the marker's options, so `name:`/`verb:`/`skip:` are
+yours to layer on top.
+
 ### 2. Call a method from Crystal
 
 Build a registry from one or more service instances and dispatch by name:
@@ -283,6 +314,20 @@ mints (`rate_limited`, …) type-checking too. The default `createHttpClient`
 transport throws `VowError` for you; a custom `createClient` transport throws it
 itself (see the escape-hatch example above).
 
+Dispatching an unknown procedure raises `not_found` — and if the name is a near
+miss for a registered one, the error's `hint` suggests it, so a typo is
+diagnosable rather than a dead end:
+
+```crystal
+registry.dispatch("API.gret", %({"name": "world"}))
+# Vow::Error: no procedure named "API.gret" (not_found)
+#   hint: did you mean "API.greet"?
+```
+
+The suggestion is the closest registered name within an edit-distance tolerance
+that scales with the query length; a name that's wildly different gets no hint
+rather than a misleading one.
+
 ## Custom types
 
 If an exported method uses your own struct or class, include
@@ -315,6 +360,33 @@ interface never disagrees with the JSON.
 
 If a referenced type can't be serialized, Vow stops with an error rather than
 generating a client that wouldn't work.
+
+An **enum** is captured the same way — found automatically wherever it's
+referenced (directly, or through arrays, unions, `NamedTuple` members, and
+struct fields) — and emitted as a string-literal union `type` alias rather than
+an `interface`:
+
+```crystal
+enum Color
+  Red
+  Green
+  Blue
+end
+
+@[Vow::Export]
+def pick(name : String) : Color
+  # ...
+end
+```
+
+```ts
+export type Color = "red" | "green" | "blue";
+```
+
+The union holds the value each member *serializes to* (`Enum#to_json`), so the
+generated type always matches the wire: Crystal's default lowercases
+(`Red` → `"red"`), and a custom `to_json` is reflected. Vow applies no transform
+of its own.
 
 ## Naming
 

@@ -54,19 +54,32 @@ module Vow
 
   # A custom type that crosses the boundary — captured automatically when an
   # `@[Vow::Export]` signature references a `JSON::Serializable` struct/class
-  # (transitively, through generics and unions). `crystal_name` is the full
-  # Crystal path (used to match references and dedup); `name` is the simple
-  # name a codegen target emits (e.g. a TS `interface`). A non-serializable
-  # custom type is rejected at compile time, so anything captured here is
-  # guaranteed to actually serialize — the manifest never describes a type
-  # that can't cross.
+  # (transitively, through generics and unions) or an `Enum`. `crystal_name` is
+  # the full Crystal path (used to match references and dedup); `name` is the
+  # simple name a codegen target emits.
+  #
+  # `kind` distinguishes the two captured shapes a target renders differently:
+  # `"struct"` (the default — a record emitted as a TS `interface` from
+  # `fields`) and `"enum"` (emitted as a string-literal-union `type` alias from
+  # `members` — the member names captured verbatim, with no case/format
+  # transform). `kind`/`members` default so manifests written before they
+  # existed still deserialize. A non-serializable, non-enum custom type is
+  # rejected at compile time, so anything captured here is guaranteed to cross.
   struct TypeDescriptor
     include JSON::Serializable
     getter name : String
     getter crystal_name : String
     getter fields : Array(FieldDescriptor)
+    getter kind : String = "struct"
+    getter members : Array(String) = [] of String
 
-    def initialize(@name : String, @crystal_name : String, @fields : Array(FieldDescriptor))
+    def initialize(
+      @name : String,
+      @crystal_name : String,
+      @fields : Array(FieldDescriptor),
+      @kind : String = "struct",
+      @members : Array(String) = [] of String,
+    )
     end
   end
 
