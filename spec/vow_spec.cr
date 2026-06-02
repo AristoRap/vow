@@ -54,14 +54,17 @@ class TestAPI
     42
   end
 
-  # A cacheable read: `verb: :get` is recorded on the descriptor so an HTTP
-  # transport routes it as GET. Dispatch itself is verb-agnostic.
-  @[Vow::Export(verb: :get)]
+  # Opts are an opaque side channel: `verb`/`timeout` are just keys Vow carries
+  # verbatim into the descriptor (a downstream HTTP transport might route `verb:
+  # :get` as GET). Vow attaches no meaning and validates nothing. `timeout: 30`
+  # keeps its number type; `name:`/`skip:` are reserved and never land in opts.
+  @[Vow::Export(verb: :get, timeout: 30)]
   def status : String
     "ok"
   end
 
-  # An explicit `verb: :post` is the same as the default — recorded as "post".
+  # Opts also carry an explicit `verb: :post` verbatim — Vow doesn't treat it as
+  # special or as "the default"; it's just another key.
   @[Vow::Export(verb: :post)]
   def reset : Bool
     true
@@ -272,22 +275,34 @@ describe Vow do
       TestAPI.vow_descriptors.find { |p| p.name == "TestAPI.greet" }.not_nil!.return_type.should eq("String")
     end
 
-    it "defaults the verb to post when unspecified" do
-      TestAPI.vow_descriptors.find { |p| p.name == "TestAPI.add" }.not_nil!.verb.should eq("post")
+    it "leaves opts empty when no extra keyword is given" do
+      TestAPI.vow_descriptors.find { |p| p.name == "TestAPI.add" }.not_nil!.opts.should be_empty
     end
 
-    it "records verb: :get for a cacheable read" do
-      TestAPI.vow_descriptors.find { |p| p.name == "TestAPI.status" }.not_nil!.verb.should eq("get")
+    it "carries an arbitrary keyword (verb) verbatim as an opt, normalizing a symbol to its string" do
+      TestAPI.vow_descriptors.find { |p| p.name == "TestAPI.status" }.not_nil!.opts["verb"].as_s.should eq("get")
     end
 
-    it "records an explicit verb: :post as post" do
-      TestAPI.vow_descriptors.find { |p| p.name == "TestAPI.reset" }.not_nil!.verb.should eq("post")
+    it "carries an explicit verb: :post verbatim, without treating it as special" do
+      TestAPI.vow_descriptors.find { |p| p.name == "TestAPI.reset" }.not_nil!.opts["verb"].as_s.should eq("post")
     end
 
-    it "round-trips the verb through manifest JSON" do
+    it "keeps a numeric opt as a number (not a stringified one)" do
+      TestAPI.vow_descriptors.find { |p| p.name == "TestAPI.status" }.not_nil!.opts["timeout"].as_i.should eq(30)
+    end
+
+    it "never sweeps the reserved name:/skip: keywords into opts" do
+      opts = TestAPI.vow_descriptors.find { |p| p.name == "custom.name" }.not_nil!.opts
+      opts.has_key?("name").should be_false
+      opts.has_key?("skip").should be_false
+    end
+
+    it "round-trips opts through manifest JSON, preserving value types" do
       manifest = Vow::Registry.new(TestAPI.new).manifest
       reparsed = Vow::Manifest.from_json(manifest.to_json)
-      reparsed.procedures.find { |p| p.name == "TestAPI.status" }.not_nil!.verb.should eq("get")
+      opts = reparsed.procedures.find { |p| p.name == "TestAPI.status" }.not_nil!.opts
+      opts["verb"].as_s.should eq("get")
+      opts["timeout"].as_i.should eq(30)
     end
 
     it "is reachable from the registry and round-trips through JSON" do

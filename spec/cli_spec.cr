@@ -41,7 +41,9 @@ describe "vow CLI" do
 
         out = File.read(opath)
         out.should contain("export function createClient(transport: VowTransport)")
-        out.should contain("ping(args: {} = {}): Promise<string> { return transport(\"API.ping\", args, \"post\") as Promise<string>; },")
+        # The manifest carries no `opts` (and no legacy `verb`), so the stub
+        # emits an empty opts bag `{}` — a clean back-compat path.
+        out.should contain("ping(args: {} = {}): Promise<string> { return transport(\"API.ping\", args, {}) as Promise<string>; },")
         status.to_s.should contain("wrote 1 procedure(s), 0 type(s)")
       ensure
         File.delete(mpath) if File.exists?(mpath)
@@ -64,7 +66,7 @@ describe "vow CLI" do
 
         js = File.read("#{stem}.js")
         js.should contain("export function createClient(transport) {")
-        js.should contain("ping(args = {}) { return transport(\"API.ping\", args, \"post\"); },")
+        js.should contain("ping(args = {}) { return transport(\"API.ping\", args, {}); },")
         js.should_not contain(": Promise") # runtime carries no type annotations
 
         dts = File.read("#{stem}.d.ts")

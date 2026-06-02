@@ -185,17 +185,11 @@ module Vow
                           "Vow generates client stubs from the signature, so the return type must be explicit — " +
                           "e.g. `def #{m.name}(...) : String`. Use `: Nil` if it returns nothing. Or #{off.id}." %}
               \{% end %}
-              # `verb:` is the optional HTTP-verb hint. Only `:get` (a cacheable,
-              # side-effect-free read) and `:post` (the default) are allowed; a
-              # bare string `"get"`/`"post"` is accepted too. Anything else is a
-              # mistake we surface loudly rather than silently routing as POST.
-              \{% if ann && (v = ann[:verb]) != nil %}
-                \{% vs = v.id.stringify %}
-                \{% unless vs == "get" || vs == "post" %}
-                  \{% raise "Vow: exported method `#{@type}##{m.name}` has an invalid verb `#{v}`. " +
-                            "Use `verb: :get` for a cacheable read or `verb: :post` (the default) for everything else." %}
-                \{% end %}
-              \{% end %}
+              # Any other `@[Vow::Export]` keyword (besides the reserved `name:`
+              # and `skip:`) is swept into the opaque `opts` bag at descriptor
+              # time and carried verbatim. Vow validates nothing about it — a key
+              # like `verb:` only means something to a downstream transport, so
+              # it's not Vow's place to allowlist values. See `vow_descriptors`.
             \{% end %}
           \{% end %}
         \{% end %}
@@ -311,13 +305,39 @@ module Vow
                   {% ctx = rr == ::Vow::Context || rr.ancestors.includes?(::Vow::Context) %}
                 {% end %}
                 {% payload = (ctx ? m.args[1..-1] : m.args).reject { |a| a.name.stringify.empty? } %}
-                # The HTTP-verb hint: `:get`/`"get"` for a cacheable read,
-                # `:post` (the default) otherwise. Validated in `macro finished`,
-                # so by here it's already known to be one of the two.
-                {% verb = (ann && ann[:verb]) ? ann[:verb].id.stringify : "post" %}
+                # The opaque opts bag: every `@[Vow::Export]` keyword except the
+                # reserved `name:`/`skip:`, carried verbatim. Vow attaches no
+                # meaning and validates nothing — a key like `verb:` only matters
+                # to a downstream transport. Each value keeps its literal type so
+                # it round-trips faithfully: a symbol normalizes to its string
+                # (`:get` → `"get"`, no leading colon, matching JS expectations),
+                # a number stays a number (int vs float by the presence of a `.`),
+                # a bool stays a bool, a string stays a string. Built as runtime
+                # statements (a fresh `%opts` per method) because `JSON::Any` is
+                # constructed at init time, not in the macro AST.
+                %opts = {} of String => ::JSON::Any
+                {% if ann %}
+                  {% for k, v in ann.named_args %}
+                    {% unless k == "name" || k == "skip" %}
+                      {% if v.is_a?(SymbolLiteral) %}
+                        %opts[{{ k.stringify }}] = ::JSON::Any.new({{ v.id.stringify }})
+                      {% elsif v.is_a?(StringLiteral) || v.is_a?(BoolLiteral) %}
+                        %opts[{{ k.stringify }}] = ::JSON::Any.new({{ v }})
+                      {% elsif v.is_a?(NumberLiteral) %}
+                        {% if v.stringify.includes?(".") %}
+                          %opts[{{ k.stringify }}] = ::JSON::Any.new({{ v }}.to_f64)
+                        {% else %}
+                          %opts[{{ k.stringify }}] = ::JSON::Any.new({{ v }}.to_i64)
+                        {% end %}
+                      {% else %}
+                        %opts[{{ k.stringify }}] = ::JSON::Any.new({{ v.id.stringify }})
+                      {% end %}
+                    {% end %}
+                  {% end %}
+                {% end %}
                 __descriptors << ::Vow::ProcedureDescriptor.new(
                   name: {{ proc_name }},
-                  verb: {{ verb }},
+                  opts: %opts,
                   args: [
                     {% for arg in payload %}
                       # The arg name is the caller-facing wire key in camelCase
@@ -415,8 +435,8 @@ module Vow
   #
   # This is intentionally narrower than `@[Vow::Export]`: it does not read the
   # marker's options (the marker is the consumer's own annotation, with its own
-  # fields), so there is no `name:`/`verb:`/`skip:` handling — the consumer
-  # layers any such concern on top.
+  # fields), so there is no `name:`/`skip:`/opts handling — the consumer layers
+  # any such concern on top.
   module Exportable::Marked
     macro vow_register_marked(registry, marker)
       {% for m in @type.methods %}

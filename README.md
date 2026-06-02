@@ -115,19 +115,40 @@ def shout(name : String, excitement : Int32 = 1) : String   # excitement is opti
 end
 ```
 
-Mark a side-effect-free **read** with `verb: :get` so an HTTP transport routes it
-as a cacheable GET (everything else defaults to `verb: :post`):
+#### Opts: an opaque side channel for transports
+
+Any keyword on `@[Vow::Export]` other than the reserved `name:` and `skip:` is
+swept into an opaque **opts** bag, carried into the manifest and the generated
+client **verbatim**. Vow validates nothing and attaches no meaning to any key —
+it just hands the bag to your transport, which decides what (if anything) the
+keys mean. Each value keeps its literal type (`:get` → the string `"get"`, `30` →
+the number `30`, `true` → the boolean `true`), so it round-trips faithfully.
+
+The canonical example is `verb`, which the bundled HTTP client reads to route a
+side-effect-free **read** as a cacheable GET (it treats a missing `verb` as
+`"post"`):
 
 ```crystal
 @[Vow::Export(verb: :get)]
-def find(id : Int32) : User   # GET — a browser/CDN can cache it
+def find(id : Int32) : User   # the HTTP transport sends GET — a browser/CDN can cache it
   # ...
 end
 ```
 
-`verb` is a transport-neutral hint recorded in the manifest; a non-HTTP transport
-ignores it. Vow never sets cache headers — it only picks the verb. The caching
-_policy_ is the app's, applied by whichever transport serves the registry.
+But `verb` is not special to Vow — it's just one opt. Add whatever your transport
+understands; they ride along untouched:
+
+```crystal
+@[Vow::Export(verb: :get, cache: 30, scope: "admin")]
+def report(id : Int32) : Report   # opts: { verb: "get", cache: 30, scope: "admin" }
+  # ...
+end
+```
+
+A transport that knows none of these keys ignores the whole bag — Vow itself
+never sets a header, builds a URL, or branches on an opt. The one piece of code
+that reads `verb` is the bundled HTTP client, because routing GET vs POST is _its_
+job, not Vow's.
 
 #### Exporting every method
 
@@ -193,7 +214,7 @@ end
 
 Wire ids, camelCased arg keys, arg defaults, and a leading `Vow::Context`
 parameter all behave exactly as under `@[Vow::Export]`. It's intentionally
-narrower: it doesn't read the marker's options, so `name:`/`verb:`/`skip:` are
+narrower: it doesn't read the marker's options, so `name:`/`skip:`/opts are
 yours to layer on top.
 
 ### 2. Call a method from Crystal
@@ -256,14 +277,17 @@ const api = createHttpClient("/rpc", {
 **The escape hatch.** When you need a transport Vow doesn't ship — batching,
 retries, websockets, auth refresh — the generated file also exports the lower-level
 `createClient(transport)`. You supply the transport: the part that sends
-`(name, args, verb)` to your backend and returns the result. `verb` is the
-procedure's HTTP verb (`"get"` for a read, `"post"` otherwise); the default
-`createHttpClient` is just this with a `fetch` wrapped in:
+`(name, args, opts)` to your backend and returns the result. `opts` is the
+procedure's opaque opts bag (see [Opts](#opts-an-opaque-side-channel-for-transports))
+— whatever you put on `@[Vow::Export]`, here for you to interpret. The default
+`createHttpClient` is just this reading `opts.verb` (defaulting to `"post"`) to
+pick GET vs POST, with a `fetch` wrapped in:
 
 ```ts
 import { createClient, VowError } from "./client";
 
-const api = createClient(async (name, args, verb) => {
+const api = createClient(async (name, args, opts) => {
+  const verb = opts.verb ?? "post"; // your convention — Vow doesn't impose one
   const path = `/rpc/${name.replaceAll(".", "/")}`; // Users.find -> /rpc/Users/find
   const res = await fetch(
     verb === "get"

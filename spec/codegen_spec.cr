@@ -65,8 +65,8 @@ class Geo
     Account.new(account_id, "n/a")
   end
 
-  # A cacheable read: `verb: :get` flows into the generated stub so the
-  # transport sends it as GET (and a CDN can cache it).
+  # An opt declared on the export flows verbatim into the generated stub as an
+  # opts bag — here `verb: :get`, which an HTTP transport reads to send a GET.
   @[Vow::Export(verb: :get)]
   def lookup(account_id : Int32) : Account
     Account.new(account_id, "n/a")
@@ -249,7 +249,7 @@ describe Vow::Codegen do
     ts = Vow::Codegen::TypeScript.emit(Vow::Registry.new(Geo.new).manifest)
 
     it "emits a transport-agnostic createClient factory" do
-      ts.should contain("export type VowTransport = (name: string, args: Record<string, unknown>, verb: string) => Promise<unknown>;")
+      ts.should contain("export type VowTransport = (name: string, args: Record<string, unknown>, opts: Record<string, unknown>) => Promise<unknown>;")
       ts.should contain("export function createClient(transport: VowTransport)")
     end
 
@@ -270,17 +270,17 @@ describe Vow::Codegen do
     end
 
     it "camelCases the leaf method and arg names (and the dispatch id leaf), keeping the namespace verbatim" do
-      ts.should contain(%(findAccount(args: { accountId: number }): Promise<Account> { return transport("Geo.findAccount", args, "post") as Promise<Account>; },))
+      ts.should contain(%(findAccount(args: { accountId: number }): Promise<Account> { return transport("Geo.findAccount", args, {}) as Promise<Account>; },))
     end
 
-    it "emits typed object-argument stubs that forward the args to the transport" do
-      ts.should contain(%(make(args: { x: number; y: number }): Promise<Point> { return transport("Geo.make", args, "post") as Promise<Point>; },))
+    it "emits typed object-argument stubs that forward the args to the transport with an empty opts bag" do
+      ts.should contain(%(make(args: { x: number; y: number }): Promise<Point> { return transport("Geo.make", args, {}) as Promise<Point>; },))
       ts.should contain("describe(args: { shape: Shape }): Promise<string>")
       ts.should contain("origins(args: { shapes: Shape[] }): Promise<Point[]>")
     end
 
-    it "passes verb \"get\" to the transport for a cacheable read" do
-      ts.should contain(%(lookup(args: { accountId: number }): Promise<Account> { return transport("Geo.lookup", args, "get") as Promise<Account>; },))
+    it "passes the opts bag (verb) to the transport for a procedure that declares opts" do
+      ts.should contain(%(lookup(args: { accountId: number }): Promise<Account> { return transport("Geo.lookup", args, {"verb": "get"}) as Promise<Account>; },))
     end
 
     it "marks an optional (defaulted) arg with ? in the stub" do
@@ -307,11 +307,12 @@ describe Vow::Codegen do
       ts.should contain("export interface HttpClientOptions {")
       ts.should contain("headers?: () => Record<string, string>;") # per-call header fn
       ts.should contain("export function createHttpClient(url: string, options: HttpClientOptions = {}) {")
-      ts.should contain("return createClient(async (name, args, verb) =>") # the escape hatch underneath
+      ts.should contain("return createClient(async (name, args, opts) =>") # the escape hatch underneath
       ts.should contain("if (!res.ok) throw new VowError(data.error, data.message, data.hint ?? null);")
     end
 
-    it "builds a per-procedure URL and switches verb in the default transport" do
+    it "reads verb from the opts bag (defaulting to post) and switches the method in the default transport" do
+      ts.should contain(%(const verb = (opts.verb as string) ?? "post";))         # the one opt the HTTP transport reads
       ts.should contain(%(const path = `${url}/${name.replaceAll(".", "/")}`;)) # dots -> slashes
       ts.should contain(%(?input=${encodeURIComponent(JSON.stringify(args))}))  # GET reads carry args in the query
       ts.should contain(%(body: JSON.stringify(args),))                         # POST writes carry args in the body
@@ -330,20 +331,25 @@ describe Vow::Codegen do
 
     it "emits the same camelCased names, namespace, and dispatch ids as the .ts" do
       js.should contain("Geo: {")
-      js.should contain(%(findAccount(args) { return transport("Geo.findAccount", args, "post"); },))
-      js.should contain(%(make(args) { return transport("Geo.make", args, "post"); },))
+      js.should contain(%(findAccount(args) { return transport("Geo.findAccount", args, {}); },))
+      js.should contain(%(make(args) { return transport("Geo.make", args, {}); },))
+    end
+
+    it "renders the opts bag identically to the .ts stub (byte-for-byte parity)" do
+      js.should contain(%(lookup(args) { return transport("Geo.lookup", args, {"verb": "get"}); },))
     end
 
     it "defaults the args object for a zero-arg stub so it stays callable as fn()" do
       js0 = Vow::Codegen::JavaScript.emit(Vow::Registry.new(Beacon.new).manifest)
-      js0.should contain(%(ping(args = {}) { return transport("Beacon.ping", args, "post"); },))
+      js0.should contain(%(ping(args = {}) { return transport("Beacon.ping", args, {}); },))
     end
 
     it "emits the VowError class and createHttpClient runtime, untyped" do
       js.should contain("export class VowError extends Error {")
       js.should contain("constructor(code, message, hint = null) {")
       js.should contain("export function createHttpClient(url, options = {}) {")
-      js.should contain("return createClient(async (name, args, verb) =>")
+      js.should contain("return createClient(async (name, args, opts) =>")
+      js.should contain(%(const verb = opts.verb ?? "post";))
       js.should contain("if (!res.ok) throw new VowError(data.error, data.message, data.hint ?? null);")
       js.should_not contain("VowErrorCode") # no type annotations in the runtime
       js.should_not contain(": Promise")
@@ -354,7 +360,7 @@ describe Vow::Codegen do
     dts = Vow::Codegen::TypeScript.emit_dts(Vow::Registry.new(Geo.new).manifest)
 
     it "declares createClient with no body, plus the shared types" do
-      dts.should contain("export type VowTransport = (name: string, args: Record<string, unknown>, verb: string) => Promise<unknown>;")
+      dts.should contain("export type VowTransport = (name: string, args: Record<string, unknown>, opts: Record<string, unknown>) => Promise<unknown>;")
       dts.should contain("export interface Account {")
       dts.should contain("export declare function createClient(transport: VowTransport): {")
       dts.should_not contain("return transport(") # declaration only — no implementation

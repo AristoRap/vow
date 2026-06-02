@@ -29,10 +29,13 @@ module Vow
         JS
 
       # The runtime twin of `TypeScript::HTTP_CLIENT` — same behaviour, no types.
+      # Reads the one opt it understands, `verb` (defaulting to `"post"`), to
+      # route reads as GET; what `verb` means is this HTTP transport's business.
       HTTP_CLIENT = <<-JS
         export function createHttpClient(url, options = {}) {
-          return createClient(async (name, args, verb) => {
+          return createClient(async (name, args, opts) => {
             const path = `${url}/${name.replaceAll(".", "/")}`;
+            const verb = opts.verb ?? "post";
             const res = verb === "get"
               ? await fetch(
                   Object.keys(args).length
@@ -56,7 +59,7 @@ module Vow
         leaf = ->(seg : String, p : ProcedureDescriptor) do
           # A zero-arg stub defaults the object so it stays callable as `fn()`.
           param = p.args.empty? ? "args = {}" : "args"
-          "#{seg.camelcase(lower: true)}(#{param}) { return transport(#{p.name.inspect}, args, #{p.verb.inspect}); }"
+          "#{seg.camelcase(lower: true)}(#{param}) { return transport(#{p.name.inspect}, args, #{Codegen.opts_literal(p.opts)}); }"
         end
         body = Codegen.render_tree(Codegen.build_tree(manifest.procedures), 2, type_mode: false, leaf: leaf)
         String.build do |s|

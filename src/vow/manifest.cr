@@ -20,17 +20,22 @@ module Vow
   end
 
   # The static description of one `@[Vow::Export]` method: the dispatch id, its
-  # args, its return type, and the HTTP verb it prefers. Produced at compile time
+  # args, its return type, and an opaque bag of `opts`. Produced at compile time
   # by `Vow::Exportable` and readable WITHOUT instantiating the service
   # (`MyService.vow_descriptors`), so a code generator never has to construct or
   # run user code.
   #
-  # `verb` is a transport-neutral hint: `"get"` marks a side-effect-free read (an
-  # HTTP transport routes it as GET so a browser/CDN can cache it), `"post"` (the
-  # default) is everything else. A non-HTTP transport (a CLI, a test harness)
-  # simply ignores it — Vow itself never sets a header or builds a URL. It
-  # defaults to `"post"` so manifests written before this field existed still
-  # deserialize.
+  # `opts` is every `@[Vow::Export]` keyword argument except the reserved `name:`
+  # and `skip:`, carried through VERBATIM. Vow validates nothing about it and
+  # attaches no meaning to any key — it is a side channel for whatever a
+  # downstream transport cares about (`verb:` for HTTP routing, a cache TTL, an
+  # auth scope, …). Each value keeps its literal type (`:get` → the string
+  # `"get"`, `30` → the number `30`, `true` → the boolean `true`), so a transport
+  # reads it back as the type it was written as. A transport that knows none of
+  # these keys ignores the whole bag — Vow itself never sets a header, builds a
+  # URL, or branches on a value here. It defaults to empty so manifests written
+  # before this field existed (and ones whose methods carry no opts) deserialize
+  # cleanly.
   struct ProcedureDescriptor
     include JSON::Serializable
     getter name : String
@@ -39,9 +44,9 @@ module Vow
     # manifest is consumed in JS/TS where `returnType` is the convention.
     @[JSON::Field(key: "returnType")]
     getter return_type : String
-    getter verb : String = "post"
+    getter opts : Hash(String, JSON::Any) = {} of String => JSON::Any
 
-    def initialize(@name : String, @args : Array(ArgDescriptor), @return_type : String, @verb : String = "post")
+    def initialize(@name : String, @args : Array(ArgDescriptor), @return_type : String, @opts : Hash(String, JSON::Any) = {} of String => JSON::Any)
     end
   end
 

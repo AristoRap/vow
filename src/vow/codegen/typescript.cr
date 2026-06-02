@@ -28,7 +28,7 @@ module Vow
     # Pure functions of the manifest: no filesystem, no instances. Every type
     # maps via `crystal_to_ts`, which raises rather than emit `any`.
     module TypeScript
-      TRANSPORT = "export type VowTransport = (name: string, args: Record<string, unknown>, verb: string) => Promise<unknown>;\n"
+      TRANSPORT = "export type VowTransport = (name: string, args: Record<string, unknown>, opts: Record<string, unknown>) => Promise<unknown>;\n"
 
       # The typed error a generated client throws. `code` is the stable
       # `VowErrorCode`; `hint` mirrors the server's optional hint. Pairs with the
@@ -66,15 +66,19 @@ module Vow
 
       # The batteries-included default transport, built on `createClient`. Each
       # procedure has its own URL — *url* is the mount base, the dotted procedure
-      # id becomes the path (`Todos.list` → `<url>/Todos/list`). A `get` read is
-      # sent as GET with its args JSON-encoded in `?input=` (so a browser/CDN can
-      # cache it); everything else is POSTed with a JSON body. Returns the decoded
-      # result, or throws a typed `VowError` from the `{ error, message, hint }`
-      # envelope on a non-2xx response.
+      # id becomes the path (`Todos.list` → `<url>/Todos/list`). This is the one
+      # place that reads an opt: a `verb` of `"get"` (defaulting to `"post"` when
+      # absent) marks a side-effect-free read, sent as GET with its args
+      # JSON-encoded in `?input=` (so a browser/CDN can cache it); everything else
+      # is POSTed with a JSON body. Knowing what `verb` means is this HTTP
+      # transport's business, not Vow's. Returns the decoded result, or throws a
+      # typed `VowError` from the `{ error, message, hint }` envelope on a non-2xx
+      # response.
       HTTP_CLIENT = <<-TS
         export function createHttpClient(url: string, options: HttpClientOptions = {}) {
-          return createClient(async (name, args, verb) => {
+          return createClient(async (name, args, opts) => {
             const path = `${url}/${name.replaceAll(".", "/")}`;
+            const verb = (opts.verb as string) ?? "post";
             const res = verb === "get"
               ? await fetch(
                   Object.keys(args).length
@@ -98,7 +102,7 @@ module Vow
         known = known_types(manifest)
         leaf = ->(seg : String, p : ProcedureDescriptor) do
           ret = Codegen.return_to_ts(p.return_type, known)
-          "#{signature(seg, p, known, declaration: false)} { return transport(#{p.name.inspect}, args, #{p.verb.inspect}) as Promise<#{ret}>; }"
+          "#{signature(seg, p, known, declaration: false)} { return transport(#{p.name.inspect}, args, #{Codegen.opts_literal(p.opts)}) as Promise<#{ret}>; }"
         end
         body = Codegen.render_tree(Codegen.build_tree(manifest.procedures), 2, type_mode: false, leaf: leaf)
 
