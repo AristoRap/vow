@@ -28,8 +28,8 @@ module Vow
   # `opts` is every `@[Vow::Export]` keyword argument except the reserved `name:`
   # and `skip:`, carried through VERBATIM. Vow validates nothing about it and
   # attaches no meaning to any key — it is a side channel for whatever a
-  # downstream transport cares about (`verb:` for HTTP routing, a cache TTL, an
-  # auth scope, …). Each value keeps its literal type (`:get` → the string
+  # downstream transport cares about, under keys the caller chose (e.g. a `verb:`
+  # a transport maps to an HTTP method, a cache TTL, an auth scope, …). Each value keeps its literal type (`:get` → the string
   # `"get"`, `30` → the number `30`, `true` → the boolean `true`), so a transport
   # reads it back as the type it was written as. A transport that knows none of
   # these keys ignores the whole bag — Vow itself never sets a header, builds a

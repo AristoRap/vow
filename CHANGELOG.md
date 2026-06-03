@@ -1,10 +1,18 @@
 # Changelog
 
+## [0.5.0] - 2026-06-03
+
+### Changed
+
+- **The bundled `createHttpClient` no longer names any opt key — you supply the GET/POST rule** _(breaking)_. 0.4.0 made `verb` an ordinary opt but left the bundled client still reading `opts.verb`, so Vow was effectively choosing the key. Now the client is fully agnostic: `HttpClientOptions` gains `method?: (opts) => "GET" | "POST"`, a function _you_ pass that maps a procedure's opts bag to a verb. The client reads no opt itself.
+  - **Default behavior changed:** with no `method`, **every call is a POST**. Previously a `verb: "get"` opt was routed to GET automatically. To restore that, pass `method: (opts) => opts.verb === "get" ? "GET" : "POST"` (or key it on whatever opt you chose — `read`, `cache`, anything).
+  - The escape-hatch `createClient(transport)` is unchanged; opts still flow to your transport verbatim. Only the bundled HTTP client's signature and default differ.
+
 ## [0.4.0] - 2026-06-02
 
 ### Changed
 
-- **`verb` is gone as a privileged field; it's now just one entry in an opaque `opts` bag** _(breaking)_. Vow is transport-agnostic, but `verb` baked an HTTP concept into the core: the macro hard-rejected anything but `:get`/`:post`, and the word leaked into the generated transport signature. Now **any `@[Vow::Export]` keyword except the reserved `name:`/`skip:`** is swept into `opts` and carried into the manifest and the generated client **verbatim** — Vow validates nothing and attaches no meaning to any key. Each value keeps its literal type (`:get` → `"get"`, `30` → `30`, `true` → `true`). The bundled `createHttpClient` is the one place that reads `opts.verb` (defaulting to `"post"`) to route GET vs POST, because that's an HTTP transport's job, not Vow's.
+- **`verb` is gone as a privileged field; it's now just one entry in an opaque `opts` bag** _(breaking)_. Vow is transport-agnostic, but `verb` baked an HTTP concept into the core: the macro hard-rejected anything but `:get`/`:post`, and the word leaked into the generated transport signature. Now **any `@[Vow::Export]` keyword except the reserved `name:`/`skip:`** is swept into `opts` and carried into the manifest and the generated client **verbatim** — Vow validates nothing and attaches no meaning to any key. Each value keeps its literal type (`:get` → `"get"`, `30` → `30`, `true` → `true`). The bundled `createHttpClient` reads `opts.verb` to route GET vs POST, because that's an HTTP transport's job, not Vow's. _(Superseded in 0.5.0: the bundled client no longer names `verb` — you supply a `method` rule.)_
   - `ProcedureDescriptor#verb : String` is replaced by `#opts : Hash(String, JSON::Any)` (wire key `"opts"`, defaults to empty).
   - The generated transport signature changes from `(name, args, verb)` to `(name, args, opts)`; bring-your-own transports passed to `createClient` must update accordingly.
   - A manifest written by 0.3.x carried a top-level `verb` key and no `opts`; it still deserializes (the unknown `verb` key is ignored, `opts` defaults empty), but a `verb: "get"` is **lost** — regenerate the manifest from source to restore GET routing.

@@ -66,7 +66,8 @@ class Geo
   end
 
   # An opt declared on the export flows verbatim into the generated stub as an
-  # opts bag — here `verb: :get`, which an HTTP transport reads to send a GET.
+  # opts bag — here a `verb: :get` of the caller's own choosing (Vow attaches no
+  # meaning to the key; a transport's `method` fn is free to read it).
   @[Vow::Export(verb: :get)]
   def lookup(account_id : Int32) : Account
     Account.new(account_id, "n/a")
@@ -305,17 +306,19 @@ describe Vow::Codegen do
 
     it "emits a batteries-included createHttpClient built on createClient" do
       ts.should contain("export interface HttpClientOptions {")
-      ts.should contain("headers?: () => Record<string, string>;") # per-call header fn
+      ts.should contain("headers?: () => Record<string, string>;")                      # per-call header fn
+      ts.should contain(%(method?: (opts: Record<string, unknown>) => "GET" | "POST";)) # caller's verb rule
       ts.should contain("export function createHttpClient(url: string, options: HttpClientOptions = {}) {")
       ts.should contain("return createClient(async (name, args, opts) =>") # the escape hatch underneath
       ts.should contain("if (!res.ok) throw new VowError(data.error, data.message, data.hint ?? null);")
     end
 
-    it "reads verb from the opts bag (defaulting to post) and switches the method in the default transport" do
-      ts.should contain(%(const verb = (opts.verb as string) ?? "post";))         # the one opt the HTTP transport reads
+    it "derives the method from the caller's method fn (defaulting to POST), naming no opt key itself" do
+      ts.should contain(%(const method = options.method?.(opts) ?? "POST";))    # caller maps opts -> verb; Vow names no key
       ts.should contain(%(const path = `${url}/${name.replaceAll(".", "/")}`;)) # dots -> slashes
       ts.should contain(%(?input=${encodeURIComponent(JSON.stringify(args))}))  # GET reads carry args in the query
       ts.should contain(%(body: JSON.stringify(args),))                         # POST writes carry args in the body
+      ts.should_not contain("opts.verb")                                        # the client hardcodes no opt key
     end
   end
 
@@ -349,8 +352,9 @@ describe Vow::Codegen do
       js.should contain("constructor(code, message, hint = null) {")
       js.should contain("export function createHttpClient(url, options = {}) {")
       js.should contain("return createClient(async (name, args, opts) =>")
-      js.should contain(%(const verb = opts.verb ?? "post";))
+      js.should contain(%(const method = options.method?.(opts) ?? "POST";)) # caller's rule, default POST
       js.should contain("if (!res.ok) throw new VowError(data.error, data.message, data.hint ?? null);")
+      js.should_not contain("opts.verb")    # the runtime hardcodes no opt key
       js.should_not contain("VowErrorCode") # no type annotations in the runtime
       js.should_not contain(": Promise")
     end

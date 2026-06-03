@@ -124,19 +124,19 @@ it just hands the bag to your transport, which decides what (if anything) the
 keys mean. Each value keeps its literal type (`:get` → the string `"get"`, `30` →
 the number `30`, `true` → the boolean `true`), so it round-trips faithfully.
 
-The canonical example is `verb`, which the bundled HTTP client reads to route a
-side-effect-free **read** as a cacheable GET (it treats a missing `verb` as
-`"post"`):
+A common use is marking a side-effect-free **read** so a transport can send it as
+a cacheable GET. The key is yours to name — call it `verb`, `read`, `method`,
+anything; Vow doesn't care:
 
 ```crystal
 @[Vow::Export(verb: :get)]
-def find(id : Int32) : User   # the HTTP transport sends GET — a browser/CDN can cache it
+def find(id : Int32) : User   # opts: { verb: "get" } — your transport decides what that means
   # ...
 end
 ```
 
-But `verb` is not special to Vow — it's just one opt. Add whatever your transport
-understands; they ride along untouched:
+Nothing here is special to Vow — `verb` is just one opt. Add whatever your
+transport understands; they all ride along untouched:
 
 ```crystal
 @[Vow::Export(verb: :get, cache: 30, scope: "admin")]
@@ -146,9 +146,10 @@ end
 ```
 
 A transport that knows none of these keys ignores the whole bag — Vow itself
-never sets a header, builds a URL, or branches on an opt. The one piece of code
-that reads `verb` is the bundled HTTP client, because routing GET vs POST is _its_
-job, not Vow's.
+never sets a header, builds a URL, or branches on an opt. Even the bundled HTTP
+client names no key: it routes GET vs POST only through a `method` function _you_
+pass it (see [Use the client](#4-use-the-client)), so the convention is entirely
+yours.
 
 #### Exporting every method
 
@@ -262,11 +263,23 @@ const api = createHttpClient("/rpc"); // done
 await api.API.greet({ name: "world" }); // typed Promise<string>
 ```
 
-`createHttpClient(url, options?)` builds each procedure's URL under `url` (a read
-is a GET with args in `?input=`, a write is a POST with a JSON body), returns the
-decoded result, and throws a typed [`VowError`](#errors) on the error envelope.
-Need to send auth or other headers? Pass a `headers` _function_ — it's evaluated
-per request, so a token that changes (or a reactive ref) is read fresh each call:
+`createHttpClient(url, options?)` builds each procedure's URL under `url`, POSTs a
+JSON body, returns the decoded result, and throws a typed [`VowError`](#errors) on
+the error envelope. It picks no opt key of its own — by default every call is a
+POST. To route side-effect-free reads as cacheable GETs, pass a `method` function
+that maps a procedure's [opts bag](#opts-an-opaque-side-channel-for-transports) to
+`"GET"` or `"POST"`. _You_ decide which opt means a read; Vow imposes nothing:
+
+```ts
+const api = createHttpClient("/rpc", {
+  method: (opts) => (opts.verb === "get" ? "GET" : "POST"), // your key, your rule
+});
+```
+
+A `"GET"` sends args JSON-encoded in `?input=` (so a browser/CDN can cache it);
+anything else POSTs a JSON body. Need to send auth or other headers? Pass a
+`headers` _function_ — it's evaluated per request, so a token that changes (or a
+reactive ref) is read fresh each call:
 
 ```ts
 const api = createHttpClient("/rpc", {
@@ -279,9 +292,9 @@ retries, websockets, auth refresh — the generated file also exports the lower-
 `createClient(transport)`. You supply the transport: the part that sends
 `(name, args, opts)` to your backend and returns the result. `opts` is the
 procedure's opaque opts bag (see [Opts](#opts-an-opaque-side-channel-for-transports))
-— whatever you put on `@[Vow::Export]`, here for you to interpret. The default
-`createHttpClient` is just this reading `opts.verb` (defaulting to `"post"`) to
-pick GET vs POST, with a `fetch` wrapped in:
+— whatever you put on `@[Vow::Export]`, here for you to interpret. The bundled
+`createHttpClient` is just this, with its `method` option deciding GET vs POST and
+a `fetch` wrapped in:
 
 ```ts
 import { createClient, VowError } from "./client";
@@ -408,7 +421,7 @@ end
 export type Color = "red" | "green" | "blue";
 ```
 
-The union holds the value each member *serializes to* (`Enum#to_json`), so the
+The union holds the value each member _serializes to_ (`Enum#to_json`), so the
 generated type always matches the wire: Crystal's default lowercases
 (`Red` → `"red"`), and a custom `to_json` is reflected. Vow applies no transform
 of its own.

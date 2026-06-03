@@ -29,14 +29,14 @@ module Vow
         JS
 
       # The runtime twin of `TypeScript::HTTP_CLIENT` — same behaviour, no types.
-      # Reads the one opt it understands, `verb` (defaulting to `"post"`), to
-      # route reads as GET; what `verb` means is this HTTP transport's business.
+      # Reads no opt itself: `options.method` (you supply it) maps the opts bag to
+      # a verb, so you decide which key marks a read; with none, every call POSTs.
       HTTP_CLIENT = <<-JS
         export function createHttpClient(url, options = {}) {
           return createClient(async (name, args, opts) => {
             const path = `${url}/${name.replaceAll(".", "/")}`;
-            const verb = opts.verb ?? "post";
-            const res = verb === "get"
+            const method = options.method?.(opts) ?? "POST";
+            const res = method === "GET"
               ? await fetch(
                   Object.keys(args).length
                     ? `${path}?input=${encodeURIComponent(JSON.stringify(args))}`

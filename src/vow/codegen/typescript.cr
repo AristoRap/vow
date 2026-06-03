@@ -57,29 +57,33 @@ module Vow
 
       # Options for `createHttpClient`. `headers` is a *function*, evaluated per
       # request — so a token that changes (or a reactive ref) is read fresh each
-      # call, rather than captured once. Shared verbatim by `.ts` and `.d.ts`.
+      # call, rather than captured once. `method` decides the HTTP verb from a
+      # procedure's opaque opts bag — the client picks no key, so a caller who
+      # wants reads sent as cacheable GETs supplies the rule (`opts => opts.verb
+      # === "get" ? "GET" : "POST"`, or whatever key they chose). Omitted, every
+      # call is a POST. Shared verbatim by `.ts` and `.d.ts`.
       HTTP_OPTIONS = <<-TS
         export interface HttpClientOptions {
           headers?: () => Record<string, string>;
+          method?: (opts: Record<string, unknown>) => "GET" | "POST";
         }
         TS
 
       # The batteries-included default transport, built on `createClient`. Each
       # procedure has its own URL — *url* is the mount base, the dotted procedure
-      # id becomes the path (`Todos.list` → `<url>/Todos/list`). This is the one
-      # place that reads an opt: a `verb` of `"get"` (defaulting to `"post"` when
-      # absent) marks a side-effect-free read, sent as GET with its args
-      # JSON-encoded in `?input=` (so a browser/CDN can cache it); everything else
-      # is POSTed with a JSON body. Knowing what `verb` means is this HTTP
-      # transport's business, not Vow's. Returns the decoded result, or throws a
-      # typed `VowError` from the `{ error, message, hint }` envelope on a non-2xx
-      # response.
+      # id becomes the path (`Todos.list` → `<url>/Todos/list`). It reads no opt
+      # itself: `options.method` (you supply it) maps the opts bag to a verb, so
+      # *you* decide which key marks a side-effect-free read. A `"GET"` sends args
+      # JSON-encoded in `?input=` (so a browser/CDN can cache it); anything else
+      # POSTs a JSON body. With no `method`, every call is a POST. Returns the
+      # decoded result, or throws a typed `VowError` from the
+      # `{ error, message, hint }` envelope on a non-2xx response.
       HTTP_CLIENT = <<-TS
         export function createHttpClient(url: string, options: HttpClientOptions = {}) {
           return createClient(async (name, args, opts) => {
             const path = `${url}/${name.replaceAll(".", "/")}`;
-            const verb = (opts.verb as string) ?? "post";
-            const res = verb === "get"
+            const method = options.method?.(opts) ?? "POST";
+            const res = method === "GET"
               ? await fetch(
                   Object.keys(args).length
                     ? `${path}?input=${encodeURIComponent(JSON.stringify(args))}`
